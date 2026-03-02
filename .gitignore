@@ -1,0 +1,22 @@
+### --- RUST / CARGO --- ###
+/target/
+**/*.rs.bk
+# Solo si usas cargo-expand o similares
+/examples/*.out
+
+### --- PYTHON --- ###
+# Entornos virtuales
+.venv/
+env/
+venv/
+ENV/
+
+# Byte-compiled / optimized
+**/__pycache__/
+**/*.py[cod]
+**/*$py.class
+
+
+### --- JETBRAINS (RustRover / PyCharm) --- ###
+.idea/
+*.iml
