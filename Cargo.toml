@@ -7,5 +7,22 @@ edition = "2024"
 
 #DEPENDENCIAS PARA SOCKET
 tokio = { version = "1", features = ["full"] }
+
+# --- JSON:  ---
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+
+# --- AUDIO: DECODE (lee flac, mp3, m4a, ogg, wav y extrae metadatos técnicos) ---
+symphonia = { version = "0.5", features = ["mp3", "flac", "isomp4", "ogg", "wav", "aac"] }
+
+# --- AUDIO: OUTPUT (manda PCM a PipeWire/ALSA, se integra con symphonia) ---
+rodio = { version = "0.17.3", features = ["symphonia-all"] }
+
+sqlx = { version = "0.8", features = ["runtime-tokio", "sqlite"] }
+
+
+ratatui = "0.28"
+crossterm = { version = "0.28", features = ["event-stream"] }
+
+axum = { version = "0.7", features = ["ws"] }
+tower-http = "0.5"

@@ -1,89 +1,89 @@
-use tokio::net::TcpStream;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use serde::{Deserialize, Serialize};
+mod services;
+mod model;
+mod audio;
+mod repository;
+mod managers;
+mod tui;
+mod web;
+mod player_cmd;
+
 use std::error::Error;
+use std::sync::Arc;
+use tokio::sync::{broadcast, mpsc};
 
-
-#[derive(Debug, Deserialize, Default)]
-pub struct Track {
-    pub id: String,
-    pub title: String,
-    pub artist: String,
-    pub album: String,
-    pub duration: String,
-    pub thumbnail: String,
-}
-
-#[derive(Serialize)]
-struct Request {
-    action: String,
-    query: String,
-}
-
-#[derive(Deserialize, Debug)]
-struct ApiResponse {
-    status: String,
-    data: Option<Vec<Track>>,
-    message: Option<String>,
-}
-
-struct MetadataClient {
-    addr: String,
-}
-
-impl MetadataClient {
-    fn new(host: &str, port: u16) -> Self {
-        Self {
-            addr: format!("{}:{}", host, port),
-        }
-    }
-
-    /// Metodo para enviar y recibir (el "corazón" que pedías)
-    async fn call(&self, action: &str, query: &str) -> Result<Vec<Track>, Box<dyn Error>> {
-        // 1. Conectar
-        let mut stream = TcpStream::connect(&self.addr).await?;
-        let (reader, mut writer) = stream.split();
-        let mut reader = BufReader::new(reader);
-
-        // 2. Preparar y enviar JSON (con newline al final)
-        let req = Request {
-            action: action.to_string(),
-            query: query.to_string(),
-        };
-        let mut payload = serde_json::to_vec(&req)?;
-        payload.push(b'\n');
-
-        writer.write_all(&payload).await?;
-        writer.flush().await?;
-
-        // 3. Recibir respuesta
-        let mut line = String::new();
-        reader.read_line(&mut line).await?;
-
-        // 3. Primero deserializamos la respuesta global
-        let api_res: ApiResponse = serde_json::from_str(&line)?;
-
-        if api_res.status == "ok" {
-            Ok(api_res.data.unwrap_or_default())
-        } else {
-            let err_msg = api_res.message.unwrap_or_else(|| "Unknown error".to_string());
-            Err(err_msg.into())
-        }
-    }
-}
+use crate::audio::AudioEngine;
+use crate::managers::{QueueManager, TrackManager};
+use crate::player_cmd::{PlayerContext, PlayerCmd, handle};
+use crate::repository::{Database, TrackRepository};
+use crate::services::{DownloadService, MetadataClient, PythonMicroservice};
+use crate::tui::{PlayerState, TuiApp};
+use crate::web::{AppState, serve};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    let client = MetadataClient::new("127.0.0.1", 5005);
 
-    // Ejemplo de uso
-    match client.call("search", "Ca7riel y Paco Amoroso").await {
-        Ok(tracks) => {
+    // ── Servicios ─────────────────────────────────────────────────────────────
+    let py = PythonMicroservice::new("MetadataServices/.venv/", "MetadataServices/hub.py");
+    py.spawn_service().await?;
 
-            println!("Respuesta del hub: {:#?}", tracks)
-        },
-        Err(e) => eprintln!("Error en la comunicación: {}", e),
+    let db            = Database::connect("sqlite://./music.db?mode=rwc").await?;
+    let repo          = TrackRepository::new(db.pool.clone());
+    let metadata      = MetadataClient::new("127.0.0.1", 5005);
+    let downloader    = DownloadService::new(".cache");
+    let track_manager = Arc::new(TrackManager::new(metadata, repo, downloader));
+
+    // ── Audio ─────────────────────────────────────────────────────────────────
+    let engine = AudioEngine::new()?;
+    let queue  = QueueManager::new(engine);
+
+    // ── Channels ──────────────────────────────────────────────────────────────
+    let (cmd_tx, mut cmd_rx)   = mpsc::unbounded_channel::<PlayerCmd>();
+    let (tui_tx, tui_rx)       = std::sync::mpsc::channel::<PlayerState>();
+    let (ws_tx, _)             = broadcast::channel::<PlayerState>(32);
+
+    // ── Watcher: avanza track automáticamente ─────────────────────────────────
+    spawn_watcher(cmd_tx.clone());
+
+    // ── TUI en su thread ──────────────────────────────────────────────────────
+    spawn_tui(cmd_tx.clone(), tui_rx);
+
+    // ── API web ───────────────────────────────────────────────────────────────
+    tokio::spawn(serve(AppState {
+        cmd_tx:   cmd_tx.clone(),
+        state_tx: ws_tx.clone(),
+    }));
+
+    // ── Main loop (delega todo a player_cmd::handle) ──────────────────────────
+    let mut ctx = PlayerContext {
+        queue,
+        track_manager,
+        cmd_tx,
+        tui_tx,
+        ws_tx,
+        is_playing: false,
+    };
+
+    while let Some(cmd) = cmd_rx.recv().await {
+        handle(cmd, &mut ctx).await;
     }
 
     Ok(())
+}
+
+// ─── Helpers de arranque ──────────────────────────────────────────────────────
+
+fn spawn_watcher(tx: mpsc::UnboundedSender<PlayerCmd>) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let _ = tx.send(PlayerCmd::PlayNext);
+    });
+}
+
+fn spawn_tui(tx: mpsc::UnboundedSender<PlayerCmd>, rx: std::sync::mpsc::Receiver<PlayerState>) {
+    std::thread::spawn(move || {
+        let mut app = TuiApp::new(tx, rx);
+        if let Err(e) = app.run() {
+            eprintln!("TUI error: {}", e);
+        }
+    });
 }

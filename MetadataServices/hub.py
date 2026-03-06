@@ -37,6 +37,9 @@ class MetadataHub:
 
     async def start(self):
         server = await asyncio.start_server(self._handle_request, self.host, self.port)
+
+        print(f"[HUB] Escuchando {self.host}:{self.port}", flush=True)
+
         async with server:
             await server.serve_forever()
 
