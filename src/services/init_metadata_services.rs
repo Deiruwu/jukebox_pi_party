@@ -55,7 +55,7 @@ impl PythonMicroservice {
 
         let python_exe = self.venv_path
             .join("bin")
-            .join("python3.14");
+            .join("python3.13");
 
         println!("Ejecutándose desde: {:#?}", self);
 

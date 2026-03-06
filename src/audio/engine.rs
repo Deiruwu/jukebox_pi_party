@@ -6,7 +6,7 @@ use std::io::BufReader;
 use std::sync::{Arc, Mutex};
 use rodio::Source;
 use crate::model::PlayableTrack;
-
+use rodio::cpal::traits::{DeviceTrait, HostTrait};
 
 // ─── ERROR ────────────────────────────────────────────────────────────────────
 
@@ -55,8 +55,27 @@ pub struct AudioEngine {
 
 impl AudioEngine {
     /// Inicializa el dispositivo de salida. Falla rápido si no hay dispositivo.
-    pub fn new() -> Result<Self, EngineError> {
-        let (_stream, handle) = OutputStream::try_default()
+pub fn new() -> Result<Self, EngineError> {
+        // 1. Obtenemos el host de ALSA (el estándar en la Pi)
+        let host = rodio::cpal::default_host();
+        
+        // 2. Enumeramos dispositivos buscando "bluealsa" o el nombre de tu Echo
+        // Tip: BlueALSA suele exponerse con ese nombre en el driver de ALSA
+        let device = host.output_devices()
+            .map_err(|_| EngineError::OutputDeviceUnavailable)?
+            .find(|d| {
+                d.name()
+                    .map(|n| n.to_lowercase().contains("bluealsa") || n.contains("Echo Pop"))
+                    .unwrap_or(false)
+            })
+            // Fallback al default si el Bluetooth está apagado para que la app no truene
+            .or_else(|| host.default_output_device())
+            .ok_or(EngineError::OutputDeviceUnavailable)?;
+
+        println!("[AUDIO] Usando dispositivo: {:?}", device.name().unwrap_or_default());
+
+        // 3. Inicializamos el stream con el dispositivo específico
+        let (_stream, handle) = OutputStream::try_from_device(&device)
             .map_err(|_| EngineError::OutputDeviceUnavailable)?;
 
         Ok(Self {
@@ -67,7 +86,6 @@ impl AudioEngine {
             volume: Arc::new(Mutex::new(1.0)),
         })
     }
-
     // ─── PLAYBACK ─────────────────────────────────────────────────────────────
 
     /// Carga y reproduce un PlayableTrack. Detiene lo que esté sonando antes.
