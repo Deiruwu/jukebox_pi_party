@@ -1,22 +1,19 @@
-### --- RUST / CARGO --- ###
 /target/
-**/*.rs.bk
-# Solo si usas cargo-expand o similares
-/examples/*.out
+Cargo.lock
 
-### --- PYTHON --- ###
-# Entornos virtuales
-.venv/
-env/
-venv/
-ENV/
+.cache/
 
-# Byte-compiled / optimized
+*.db
+*.db-shm
+*.db-wal
+
+**/.venv/
 **/__pycache__/
-**/*.py[cod]
-**/*$py.class
+**/*.pyc
+**/cambiar/
 
-
-### --- JETBRAINS (RustRover / PyCharm) --- ###
 .idea/
 *.iml
+
+.DS_Store
+Thumbs.db
