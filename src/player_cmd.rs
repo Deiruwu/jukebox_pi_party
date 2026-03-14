@@ -4,7 +4,7 @@ use tokio::sync::{broadcast, mpsc};
 use crate::managers::{QueueManager, TrackManager};
 use crate::tui::PlayerState;
 
-// ─── Enum ─────────────────────────────────────────────────────────────────────
+// --- Enum --------------------------------------------------------------------
 
 pub enum PlayerCmd {
     Enqueue(crate::model::Track),
@@ -15,28 +15,38 @@ pub enum PlayerCmd {
     StatusMsg(String),
     RemoveAt(usize),
     MoveTrack { from: usize, to: usize },
+    Tick,
 }
 
-// ─── Contexto que necesitan los handlers ──────────────────────────────────────
+// --- Contexto que necesitan los handlers -------------------------------------
+
 pub struct PlayerContext {
-    pub queue:        QueueManager,
+    pub queue:         QueueManager,
     pub track_manager: Arc<TrackManager>,
-    pub cmd_tx:       mpsc::UnboundedSender<PlayerCmd>,
-    pub tui_tx:       std::sync::mpsc::Sender<PlayerState>,
-    pub ws_tx:        broadcast::Sender<PlayerState>,
-    pub is_playing:   bool,
+    pub cmd_tx:        mpsc::UnboundedSender<PlayerCmd>,
+    pub tui_tx:        std::sync::mpsc::Sender<PlayerState>,
+    pub ws_tx:         broadcast::Sender<PlayerState>,
+    pub is_playing:    bool,
 }
 
 impl PlayerContext {
-    /// Construye y envía un snapshot del estado actual a TUI y WS.
+    /// Construye y envia un snapshot del estado actual a TUI y WS.
     pub fn push_state(&self, msg: Option<String>) {
+        let elapsed  = self.queue.position().as_secs();
+        let duration = self.queue.duration().map(|d| d.as_secs()).unwrap_or(0);
+        let progress = if duration > 0 {
+            elapsed as f64 / duration as f64
+        } else {
+            0.0
+        };
+
         let state = PlayerState {
             current:       self.queue.current(),
             queue:         self.queue.list(),
             is_playing:    self.is_playing,
-            progress:      0.0,
-            elapsed_secs:  0,
-            duration_secs: 0,
+            progress,
+            elapsed_secs:  elapsed,
+            duration_secs: duration,
             status_msg:    msg,
         };
         let _ = self.tui_tx.send(state.clone());
@@ -44,9 +54,8 @@ impl PlayerContext {
     }
 }
 
-// ─── Dispatcher ───────────────────────────────────────────────────────────────
+// --- Dispatcher --------------------------------------------------------------
 
-/// Procesa un comando. Devuelve el nuevo valor de `is_playing`.
 pub async fn handle(cmd: PlayerCmd, ctx: &mut PlayerContext) {
     match cmd {
         PlayerCmd::Search(query)          => handle_search(query, ctx),
@@ -57,10 +66,11 @@ pub async fn handle(cmd: PlayerCmd, ctx: &mut PlayerContext) {
         PlayerCmd::MoveTrack { from, to } => handle_move(from, to, ctx),
         PlayerCmd::StatusMsg(msg)         => ctx.push_state(Some(msg)),
         PlayerCmd::TextCmd(cmd)           => handle_text_cmd(&cmd, ctx),
+        PlayerCmd::Tick                   => { if ctx.is_playing { ctx.push_state(None); } }
     }
 }
 
-// ─── Handlers individuales ────────────────────────────────────────────────────
+// --- Handlers individuales ---------------------------------------------------
 
 fn handle_search(query: String, ctx: &PlayerContext) {
     let tm  = Arc::clone(&ctx.track_manager);

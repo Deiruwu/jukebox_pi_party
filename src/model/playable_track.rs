@@ -5,6 +5,7 @@ pub struct AudioProperties {
     pub channels: u8,           // 2 (stereo)
     pub bit_depth: Option<u8>,  // 24, 16, None si es lossy (mp3)
     pub codec: String,          // "flac", "mp3", "aac"
+    pub duration_secs: Option<u64>,
 }
 
 #[derive(Debug, Clone)]

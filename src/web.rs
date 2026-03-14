@@ -1,5 +1,7 @@
 // POST /api/search          { "query": "..." }  → encola directo
 // GET  /api/results?query=  → devuelve Vec<TrackDto> sin encolar
+// GET  /api/current         → track actual + posicion + estado
+// GET  /api/queue           → cola pendiente
 // POST /api/pause
 // POST /api/resume
 // POST /api/stop
@@ -21,22 +23,23 @@ use axum::{
     Json,
 };
 use serde::{Deserialize, Serialize};
-use tokio::sync::{broadcast, mpsc};
+use tokio::sync::{broadcast, mpsc, RwLock};
 use crate::model::Track;
 use crate::player_cmd::PlayerCmd;
 use crate::TrackManager;
 use crate::tui::PlayerState;
 
-// ─── Estado compartido del servidor ──────────────────────────────────────────
+// --- Estado compartido del servidor ------------------------------------------
 
 #[derive(Clone)]
 pub struct AppState {
     pub cmd_tx:        mpsc::UnboundedSender<PlayerCmd>,
     pub state_tx:      broadcast::Sender<PlayerState>,
     pub track_manager: Arc<TrackManager>,
+    pub last_state:    Arc<RwLock<PlayerState>>,
 }
 
-// ─── DTOs ─────────────────────────────────────────────────────────────────────
+// --- DTOs --------------------------------------------------------------------
 
 #[derive(Deserialize)] pub struct SearchBody  { pub query: String }
 #[derive(Deserialize)] pub struct ResultQuery { pub query: String }
@@ -52,14 +55,25 @@ pub struct TrackDto {
     pub thumbnail: Option<String>,
 }
 
+#[derive(Serialize)]
+pub struct CurrentResponse {
+    pub current:       Option<Track>,
+    pub is_playing:    bool,
+    pub elapsed_secs:  u64,
+    pub duration_secs: u64,
+    pub progress:      f64,
+}
+
 fn ok() -> Json<OkResponse> { Json(OkResponse { ok: true }) }
 
-// ─── Router ───────────────────────────────────────────────────────────────────
+// --- Router ------------------------------------------------------------------
 
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/api/search",  post(search_handler))
         .route("/api/results", get(results_handler))
+        .route("/api/current", get(current_handler))
+        .route("/api/queue",   get(queue_handler))
         .route("/api/pause",   post(|s: State<AppState>| text_cmd(s, "pause")))
         .route("/api/resume",  post(|s: State<AppState>| text_cmd(s, "resume")))
         .route("/api/stop",    post(|s: State<AppState>| text_cmd(s, "stop")))
@@ -74,11 +88,11 @@ pub fn build_router(state: AppState) -> Router {
 
 pub async fn serve(state: AppState) {
     let listener = tokio::net::TcpListener::bind("0.0.0.0:3000").await.unwrap();
-    println!("🎵  API en http://0.0.0.0:3000");
+    println!("API en http://0.0.0.0:3000");
     axum::serve(listener, build_router(state)).await.unwrap();
 }
 
-// ─── Handlers REST ────────────────────────────────────────────────────────────
+// --- Handlers REST -----------------------------------------------------------
 
 async fn search_handler(
     State(s): State<AppState>,
@@ -93,11 +107,25 @@ async fn results_handler(
     Query(q): Query<ResultQuery>,
 ) -> impl IntoResponse {
     match s.track_manager.fetch_all_result(&q.query).await {
-        Ok(tracks) => {
-            Json(tracks).into_response()
-        }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+        Ok(tracks) => Json(tracks).into_response(),
+        Err(e)     => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
+}
+
+async fn current_handler(State(s): State<AppState>) -> impl IntoResponse {
+    let state = s.last_state.read().await;
+    Json(CurrentResponse {
+        current:       state.current.clone(),
+        is_playing:    state.is_playing,
+        elapsed_secs:  state.elapsed_secs,
+        duration_secs: state.duration_secs,
+        progress:      state.progress,
+    }).into_response()
+}
+
+async fn queue_handler(State(s): State<AppState>) -> impl IntoResponse {
+    let state = s.last_state.read().await;
+    Json(state.queue.clone()).into_response()
 }
 
 async fn text_cmd(State(s): State<AppState>, cmd: &'static str) -> impl IntoResponse {
@@ -105,24 +133,36 @@ async fn text_cmd(State(s): State<AppState>, cmd: &'static str) -> impl IntoResp
     ok()
 }
 
-async fn play_at_handler(State(s): State<AppState>, Json(b): Json<IndexBody>) -> impl IntoResponse {
+async fn play_at_handler(
+    State(s): State<AppState>,
+    Json(b): Json<IndexBody>,
+) -> impl IntoResponse {
     let _ = s.cmd_tx.send(PlayerCmd::PlayAt(b.index));
     ok()
 }
 
-async fn remove_handler(State(s): State<AppState>, Json(b): Json<IndexBody>) -> impl IntoResponse {
+async fn remove_handler(
+    State(s): State<AppState>,
+    Json(b): Json<IndexBody>,
+) -> impl IntoResponse {
     let _ = s.cmd_tx.send(PlayerCmd::RemoveAt(b.index));
     ok()
 }
 
-async fn move_handler(State(s): State<AppState>, Json(b): Json<MoveBody>) -> impl IntoResponse {
+async fn move_handler(
+    State(s): State<AppState>,
+    Json(b): Json<MoveBody>,
+) -> impl IntoResponse {
     let _ = s.cmd_tx.send(PlayerCmd::MoveTrack { from: b.from, to: b.to });
     ok()
 }
 
-// ─── WebSocket ────────────────────────────────────────────────────────────────
+// --- WebSocket ---------------------------------------------------------------
 
-async fn ws_handler(ws: WebSocketUpgrade, State(s): State<AppState>) -> impl IntoResponse {
+async fn ws_handler(
+    ws: WebSocketUpgrade,
+    State(s): State<AppState>,
+) -> impl IntoResponse {
     ws.on_upgrade(move |socket| push_loop(socket, s.state_tx.subscribe()))
 }
 

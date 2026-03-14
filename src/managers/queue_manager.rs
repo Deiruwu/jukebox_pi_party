@@ -2,6 +2,7 @@
 
 use std::collections::VecDeque;
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use crate::audio::{AudioEngine, probe_file};
 use crate::model::Track;
 
@@ -225,6 +226,22 @@ impl QueueManager {
 
     pub fn is_finished(&self) -> bool {
         self.engine.is_finished()
+    }
+
+    pub fn history(&self) -> Vec<Track> {
+        self.state.lock().unwrap().history.clone()
+    }
+
+    pub fn current_track(&self) -> Option<Track> {
+        self.state.lock().unwrap().current.clone()
+    }
+
+    pub fn position(&self) -> Duration {
+        self.engine.position()
+    }
+
+    pub fn duration(&self) -> Option<std::time::Duration> {
+        self.engine.duration()
     }
 
     /**

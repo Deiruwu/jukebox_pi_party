@@ -1,6 +1,3 @@
-// src/audio/decoder.rs
-
-use symphonia::core::codecs::DecoderOptions;
 use symphonia::core::formats::FormatOptions;
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
@@ -90,11 +87,16 @@ pub fn probe_file(path: &str, track: Track) -> Result<PlayableTrack, DecodeError
         .map(|d| d.short_name.to_string())
         .unwrap_or_else(|| "unknown".to_string());
 
+    let duration_secs = params.n_frames
+        .zip(params.sample_rate)
+        .map(|(frames, rate)| frames / rate as u64);
+
     let audio_props = AudioProperties {
         sample_rate,
         channels,
         bit_depth,
         codec,
+        duration_secs,
     };
 
     Ok(PlayableTrack {
