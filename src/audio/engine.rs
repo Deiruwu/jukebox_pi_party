@@ -70,7 +70,7 @@ impl AudioEngine {
                 d.description()
                     .map(|desc| {
                         let name = desc.name().to_lowercase();
-                        name.contains("bluealsa") || name.contains("echo pop")
+                        name.contains("bluetooth audio")
                     })
                     .unwrap_or(false)
             })
