@@ -22,7 +22,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, mpsc};
-
+use crate::model::Track;
 use crate::player_cmd::PlayerCmd;
 use crate::TrackManager;
 use crate::tui::PlayerState;
@@ -94,13 +94,7 @@ async fn results_handler(
 ) -> impl IntoResponse {
     match s.track_manager.fetch_all_result(&q.query).await {
         Ok(tracks) => {
-            let dtos: Vec<TrackDto> = tracks.into_iter().map(|t| TrackDto {
-                id:        t.id,
-                title:     t.title,
-                artist:    t.artist,
-                thumbnail: Some(t.thumbnail),
-            }).collect();
-            Json(dtos).into_response()
+            Json(tracks).into_response()
         }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
     }
