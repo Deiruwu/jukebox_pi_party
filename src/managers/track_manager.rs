@@ -87,30 +87,30 @@ impl TrackManager {
         query: &str,
         on_status: impl Fn(String) + Send + 'static + Clone,
     ) -> Result<Track, TrackManagerError> {
-        let query = query.trim();
+        let id = query.trim();
 
         // ── 1. ¿Es un ID directo o un link? → intentar cache hit rápido ──────
-        if let Some(id) = extract_video_id(query) {
-            if let Some(cached) = self.repo.get_by_id(&id).await? {
-                if cached.path.is_some() {
-                    return Ok(cached);
-                }
-            }
-            return self.download_and_save_by_id(&id, None, on_status).await;
-        }
 
-        // ── 2. Búsqueda por texto → metadata primero ──────────────────────────
-        let track = self.fetch_first_result(query).await?;
-
-        // ── 3. Cache hit tras resolver el ID real ─────────────────────────────
-        if let Some(cached) = self.repo.get_by_id(&track.id).await? {
+        if let Some(cached) = self.repo.get_by_id(&id).await? {
             if cached.path.is_some() {
                 return Ok(cached);
             }
         }
+        self.download_and_save_by_id(&id, None, on_status).await
 
-        // ── 4. No existe → descargar ──────────────────────────────────────────
-        self.download_and_save_by_id(&track.id.clone(), Some(track), on_status).await
+
+        // // ── 2. Búsqueda por texto → metadata primero ──────────────────────────
+        // let track = self.fetch_first_result(query).await?;
+        // 
+        // // ── 3. Cache hit tras resolver el ID real ─────────────────────────────
+        // if let Some(cached) = self.repo.get_by_id(&track.id).await? {
+        //     if cached.path.is_some() {
+        //         return Ok(cached);
+        //     }
+        // }
+        // 
+        // // ── 4. No existe → descargar ──────────────────────────────────────────
+        // self.download_and_save_by_id(&track.id.clone(), Some(track), on_status).await
     }
 
     /**
@@ -132,13 +132,13 @@ impl TrackManager {
      * println!("{}", track.title);
      * ```
      */
-    async fn fetch_first_result(&self, query: &str) -> Result<Track, TrackManagerError> {
-        let mut results = self.metadata
+    pub async fn fetch_all_result(&self, query: &str) -> Result<Vec<Track>, TrackManagerError> {
+        let results = self.metadata
             .call("search", query)
             .await
             .map_err(|e| TrackManagerError::MetadataError(e.to_string()))?;
-
-        results.drain(..).next().ok_or(TrackManagerError::NoResults)
+        
+        Ok(results)
     }
 
     /**
@@ -153,10 +153,7 @@ impl TrackManager {
         track: Option<Track>,
         on_status: impl Fn(String) + Send + 'static,
     ) -> Result<Track, TrackManagerError> {
-        let track = match track {
-            Some(t) => t,
-            None => self.fetch_first_result(id).await?,
-        };
+        let track = track.ok_or(TrackManagerError::NoResults)?;
 
         let path = self.downloader.download(&track, on_status).await?;
 

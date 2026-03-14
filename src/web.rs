@@ -1,8 +1,5 @@
-// src/web.rs
-//
-// API REST + WebSocket. Sin frontend — el cliente lo pone tu amigo.
-//
-// POST /api/search          { "query": "..." }
+// POST /api/search          { "query": "..." }  → encola directo
+// GET  /api/results?query=  → devuelve Vec<TrackDto> sin encolar
 // POST /api/pause
 // POST /api/resume
 // POST /api/stop
@@ -13,9 +10,12 @@
 // POST /api/move            { "from": n, "to": n }
 // GET  /ws                  WebSocket push — recibe PlayerState JSON en cada cambio
 
+use std::sync::Arc;
+
 use axum::{
     Router,
-    extract::{State, WebSocketUpgrade, ws::{WebSocket, Message}},
+    extract::{Query, State, WebSocketUpgrade, ws::{WebSocket, Message}},
+    http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
     Json,
@@ -24,22 +24,33 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::{broadcast, mpsc};
 
 use crate::player_cmd::PlayerCmd;
+use crate::TrackManager;
 use crate::tui::PlayerState;
 
 // ─── Estado compartido del servidor ──────────────────────────────────────────
 
 #[derive(Clone)]
 pub struct AppState {
-    pub cmd_tx:   mpsc::UnboundedSender<PlayerCmd>,
-    pub state_tx: broadcast::Sender<PlayerState>,
+    pub cmd_tx:        mpsc::UnboundedSender<PlayerCmd>,
+    pub state_tx:      broadcast::Sender<PlayerState>,
+    pub track_manager: Arc<TrackManager>,
 }
 
 // ─── DTOs ─────────────────────────────────────────────────────────────────────
 
-#[derive(Deserialize)] pub struct SearchBody { pub query: String }
-#[derive(Deserialize)] pub struct IndexBody  { pub index: usize }
-#[derive(Deserialize)] pub struct MoveBody   { pub from: usize, pub to: usize }
-#[derive(Serialize)]   pub struct OkResponse { pub ok: bool }
+#[derive(Deserialize)] pub struct SearchBody  { pub query: String }
+#[derive(Deserialize)] pub struct ResultQuery { pub query: String }
+#[derive(Deserialize)] pub struct IndexBody   { pub index: usize }
+#[derive(Deserialize)] pub struct MoveBody    { pub from: usize, pub to: usize }
+#[derive(Serialize)]   pub struct OkResponse  { pub ok: bool }
+
+#[derive(Serialize)]
+pub struct TrackDto {
+    pub id:        String,
+    pub title:     String,
+    pub artist:    String,
+    pub thumbnail: Option<String>,
+}
 
 fn ok() -> Json<OkResponse> { Json(OkResponse { ok: true }) }
 
@@ -48,6 +59,7 @@ fn ok() -> Json<OkResponse> { Json(OkResponse { ok: true }) }
 pub fn build_router(state: AppState) -> Router {
     Router::new()
         .route("/api/search",  post(search_handler))
+        .route("/api/results", get(results_handler))
         .route("/api/pause",   post(|s: State<AppState>| text_cmd(s, "pause")))
         .route("/api/resume",  post(|s: State<AppState>| text_cmd(s, "resume")))
         .route("/api/stop",    post(|s: State<AppState>| text_cmd(s, "stop")))
@@ -74,6 +86,24 @@ async fn search_handler(
 ) -> impl IntoResponse {
     let _ = s.cmd_tx.send(PlayerCmd::Search(b.query));
     ok()
+}
+
+async fn results_handler(
+    State(s): State<AppState>,
+    Query(q): Query<ResultQuery>,
+) -> impl IntoResponse {
+    match s.track_manager.fetch_all_result(&q.query).await {
+        Ok(tracks) => {
+            let dtos: Vec<TrackDto> = tracks.into_iter().map(|t| TrackDto {
+                id:        t.id,
+                title:     t.title,
+                artist:    t.artist,
+                thumbnail: Some(t.thumbnail),
+            }).collect();
+            Json(dtos).into_response()
+        }
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response(),
+    }
 }
 
 async fn text_cmd(State(s): State<AppState>, cmd: &'static str) -> impl IntoResponse {

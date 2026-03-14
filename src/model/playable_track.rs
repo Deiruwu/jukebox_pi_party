@@ -10,6 +10,6 @@ pub struct AudioProperties {
 #[derive(Debug, Clone)]
 pub struct PlayableTrack {
     pub track: Track,             // metadatos de negocio
-    pub path: String,             // /music/cache/xyz.flac
+    pub path: String,             // /cache/xyz.flac
     pub audio: AudioProperties,   // leído por symphonia al momento de encolar
 }
