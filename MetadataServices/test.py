@@ -4,7 +4,7 @@ import json
 
 def interactive_test():
     host = '127.0.0.1'
-    port = 5005
+    port = 5010
 
     print(f"[*] Conectando a {host}:{port}. Escribe tu búsqueda o 'exit' para salir.")
 
@@ -18,7 +18,7 @@ def interactive_test():
                 client.settimeout(10.0)
                 client.connect((host, port))
 
-                payload = {"action": "search", "query": query}
+                payload = {"action": "video", "query": query}
                 client.sendall((json.dumps(payload) + "\n").encode('utf-8'))
 
                 # Leer respuesta completa (NDJSON)

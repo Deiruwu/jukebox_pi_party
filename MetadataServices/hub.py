@@ -22,6 +22,15 @@ class MetadataHub:
                 loop = asyncio.get_running_loop()
                 result = await loop.run_in_executor(None, self.youtube_service.search, query, 5)
                 response = {"status": "ok", "data": result}
+            elif action == "video":
+                video_id = request.get('query')
+                loop = asyncio.get_running_loop()
+                result = await loop.run_in_executor(
+                    None,
+                    self.youtube_service.get_video,
+                    video_id
+                )
+                response = {"status": "ok", "data": result}
             else:
                 response = {"status": "error", "message": "Unknown action"}
 

@@ -64,7 +64,7 @@ impl TrackManager {
                 }
             }
             // ── 3. No está en DB → buscar metadata por ID y descargar ────────
-            let track = self.fetch_first_result(&id).await?;
+            let track = self.fetch_by_id(&id).await?;
             return self.download_and_save(track, on_status).await;
         }
 
@@ -102,6 +102,14 @@ impl TrackManager {
         results.drain(..).next().ok_or(TrackManagerError::NoResults)
     }
 
+    async fn fetch_by_id(&self, id: &str) -> Result<Track, TrackManagerError> {
+        let mut results = self.metadata
+            .call("video", id)
+            .await
+            .map_err(|e| TrackManagerError::MetadataError(e.to_string()))?;
+
+        results.drain(..).next().ok_or(TrackManagerError::NoResults)
+    }
     /// Descarga un track y lo persiste en la base de datos.
     async fn download_and_save(
         &self,
