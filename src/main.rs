@@ -28,7 +28,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
 
     let db            = Database::connect("sqlite://./music.db?mode=rwc").await?;
     let repo          = TrackRepository::new(db.pool.clone());
-    let metadata      = MetadataClient::new("127.0.0.1", 5005);
+    let metadata      = MetadataClient::new("127.0.0.1", 5010);
     let downloader    = DownloadService::new(".cache");
     let track_manager = Arc::new(TrackManager::new(metadata, repo, downloader));
 

@@ -3,7 +3,7 @@ import json
 from services.youtube_service import YouTubeService
 
 class MetadataHub:
-    def __init__(self, host='127.0.0.1', port=5005):
+    def __init__(self, host='127.0.0.1', port=5010):
         self.host = host
         self.port = port
         self.youtube_service = YouTubeService()
