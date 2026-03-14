@@ -58,6 +58,12 @@ impl AudioEngine {
     pub fn new() -> Result<Self, EngineError> {
         let host = rodio::cpal::default_host();
 
+        for device in host.output_devices().unwrap() {
+            if let Ok(desc) = device.description() {
+                println!("[AUDIO] Dispositivo encontrado: {}", desc.name());
+            }
+        }
+
         let device = host.output_devices()
             .map_err(|_| EngineError::OutputDeviceUnavailable)?
             .find(|d| {
