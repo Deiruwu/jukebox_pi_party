@@ -4,6 +4,7 @@ use tokio::net::TcpStream;
 use crate::model::{ApiResponse, Request, Track};
 
 
+#[derive(Clone)]
 pub struct MetadataClient {
     addr: String,
 }

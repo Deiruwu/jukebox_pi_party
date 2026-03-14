@@ -45,6 +45,7 @@ impl From<DownloadError> for TrackManagerError {
  *  Struct del TrackManager y sus métodos
  *  ======================================
  */
+#[derive(Clone)]
 pub struct TrackManager {
     metadata: MetadataClient,
     repo: TrackRepository,

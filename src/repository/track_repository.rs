@@ -1,6 +1,7 @@
 use sqlx::SqlitePool;
 use crate::model::Track;
 
+#[derive(Clone)]
 pub struct TrackRepository {
     pool: SqlitePool,
 }

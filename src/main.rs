@@ -51,6 +51,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     tokio::spawn(serve(AppState {
         cmd_tx:   cmd_tx.clone(),
         state_tx: ws_tx.clone(),
+        track_manager: track_manager.clone()
     }));
 
     // ── Main loop (delega todo a player_cmd::handle) ──────────────────────────

@@ -28,6 +28,7 @@ impl From<std::io::Error> for DownloadError {
     fn from(e: std::io::Error) -> Self { DownloadError::IoError(e) }
 }
 
+#[derive(Clone)]
 pub struct DownloadService {
     cache_dir: PathBuf,
 }
