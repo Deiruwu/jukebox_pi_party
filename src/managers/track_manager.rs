@@ -83,35 +83,36 @@ impl TrackManager {
         self.resolve_with_status(query, |_| {}).await
     }
 
+
     pub async fn resolve_with_status(
         &self,
         query: &str,
         on_status: impl Fn(String) + Send + 'static + Clone,
     ) -> Result<Track, TrackManagerError> {
-        let id = query.trim();
+        let query = query.trim();
 
         // ── 1. ¿Es un ID directo o un link? → intentar cache hit rápido ──────
+        if let Some(id) = extract_video_id(query) {
+            if let Some(cached) = self.repo.get_by_id(&id).await? {
+                if cached.path.is_some() {
+                    return Ok(cached);
+                }
+            }
+            return self.download_and_save_by_id(&id, None, on_status).await;
+        }
 
-        if let Some(cached) = self.repo.get_by_id(&id).await? {
+        // ── 2. Búsqueda por texto → metadata primero ──────────────────────────
+        let track = self.fetch_first_result(query).await?;
+
+        // ── 3. Cache hit tras resolver el ID real ─────────────────────────────
+        if let Some(cached) = self.repo.get_by_id(&track.id).await? {
             if cached.path.is_some() {
                 return Ok(cached);
             }
         }
-        self.download_and_save_by_id(&id, None, on_status).await
 
-
-        // // ── 2. Búsqueda por texto → metadata primero ──────────────────────────
-        // let track = self.fetch_first_result(query).await?;
-        // 
-        // // ── 3. Cache hit tras resolver el ID real ─────────────────────────────
-        // if let Some(cached) = self.repo.get_by_id(&track.id).await? {
-        //     if cached.path.is_some() {
-        //         return Ok(cached);
-        //     }
-        // }
-        // 
-        // // ── 4. No existe → descargar ──────────────────────────────────────────
-        // self.download_and_save_by_id(&track.id.clone(), Some(track), on_status).await
+        // ── 4. No existe → descargar ──────────────────────────────────────────
+        self.download_and_save_by_id(&track.id.clone(), Some(track), on_status).await
     }
 
     /**
@@ -138,9 +139,19 @@ impl TrackManager {
             .call("search", query)
             .await
             .map_err(|e| TrackManagerError::MetadataError(e.to_string()))?;
-        
+
         Ok(results)
     }
+
+    async fn fetch_first_result(&self, query: &str) -> Result<Track, TrackManagerError> {
+        let mut results = self.metadata
+            .call("search", query)
+            .await
+            .map_err(|e| TrackManagerError::MetadataError(e.to_string()))?;
+
+        results.drain(..).next().ok_or(TrackManagerError::NoResults)
+    }
+
 
     /**
      *  Descarga y guarda una canción por id
