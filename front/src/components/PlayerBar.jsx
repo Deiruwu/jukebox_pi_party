@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import { CONFIG } from '../config.js';
-import { Play, Pause, SkipForward, SkipBack, Square, Repeat } from 'lucide-react';
+import { Play, Pause, SkipForward, SkipBack, Square, Repeat, Volume2 } from 'lucide-react';
 
 const fmt = (secs) => {
   const s = Math.floor(secs);
@@ -8,8 +8,10 @@ const fmt = (secs) => {
 };
 
 const PlayerBar = () => {
-  const [state, setState] = useState(null);
-  const wsRef = useRef(null);
+  const [state, setState]           = useState(null);
+  const [volumeOpen, setVolumeOpen] = useState(false);
+  const wsRef     = useRef(null);
+  const volumeRef = useRef(null);
 
   useEffect(() => {
     const connect = () => {
@@ -28,6 +30,22 @@ const PlayerBar = () => {
     connect();
     return () => wsRef.current?.close();
   }, []);
+
+  // Cierra el popover si se toca fuera
+  useEffect(() => {
+    if (!volumeOpen) return;
+    const handler = (e) => {
+      if (volumeRef.current && !volumeRef.current.contains(e.target)) {
+        setVolumeOpen(false);
+      }
+    };
+    document.addEventListener('touchstart', handler);
+    document.addEventListener('mousedown', handler);
+    return () => {
+      document.removeEventListener('touchstart', handler);
+      document.removeEventListener('mousedown', handler);
+    };
+  }, [volumeOpen]);
 
   const cmd = async (endpoint) => {
     try { await fetch(`${CONFIG.API}/${endpoint}`, { method: 'POST' }); } catch {}
@@ -142,6 +160,36 @@ const PlayerBar = () => {
               <Repeat size={16} />
             </button>
 
+            {/* Botón volumen móvil con popover vertical */}
+            <div className="relative" ref={volumeRef}>
+              <button
+                  onClick={() => setVolumeOpen(v => !v)}
+                  className={`transition ${volumeOpen ? 'text-[#8B5CF6]' : 'text-[#646482]'}`}>
+                <Volume2 size={16} />
+              </button>
+
+              {volumeOpen && (
+                  <div className="absolute bottom-9 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2 px-3 py-4 rounded-2xl z-50"
+                       style={{ background: 'rgba(22,22,32,0.97)', border: '1px solid rgba(100,100,130,0.2)', boxShadow: '0 8px 32px rgba(0,0,0,0.5)' }}>
+                    <span className="text-[#646482] text-xs tabular-nums">{Math.round(volume * 100)}</span>
+                    <input
+                        type="range"
+                        min="0" max="1" step="0.01"
+                        value={volume}
+                        onChange={handleVolume}
+                        style={{
+                          accentColor: '#8B5CF6',
+                          writingMode: 'vertical-lr',
+                          direction: 'rtl',
+                          width: 28,
+                          height: 80,
+                          cursor: 'pointer',
+                        }}
+                    />
+                  </div>
+              )}
+            </div>
+
             <button onClick={() => cmd('stop')} disabled={!track}
                     className="text-[#646482] hover:text-[#EC4899] transition disabled:opacity-20">
               <Square size={14} fill="currentColor" />
@@ -217,13 +265,13 @@ const PlayerBar = () => {
             </div>
             <div className="w-px h-4 bg-[#646482]/20" />
 
-            {/* Slider de volumen */}
+            {/* Slider de volumen horizontal — solo desktop */}
             <input
                 type="range"
                 min="0" max="1" step="0.01"
                 value={volume}
                 onChange={handleVolume}
-                className="w-20 accent-[#8B5CF6] cursor-pointer"
+                className="w-20 cursor-pointer"
                 style={{ accentColor: '#8B5CF6' }}
             />
 
