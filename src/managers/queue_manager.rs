@@ -44,6 +44,7 @@ struct QueueState {
     queue:   VecDeque<Track>,
     history: Vec<Track>,
     current: Option<Track>,
+    on_repeat_track: bool,
 }
 
 /**
@@ -55,6 +56,7 @@ impl QueueState {
             queue:   VecDeque::new(),
             history: Vec::new(),
             current: None,
+            on_repeat_track: false,
         }
     }
 }
@@ -119,13 +121,18 @@ impl QueueManager {
      */
 
     pub fn next(&self) -> Result<(), QueueError> {
+        let repeat = self.state.lock().unwrap().on_repeat_track;
+
+        if repeat {
+            return self.engine.seek(Duration::ZERO)
+                .map_err(|e| QueueError::EngineError(e.to_string()));
+        }
+
         let track = {
             let mut s = self.state.lock().unwrap();
-
             if let Some(prev) = s.current.take() {
                 s.history.push(prev);
             }
-
             s.queue.pop_front().ok_or(QueueError::EmptyQueue)?
         };
 
@@ -164,6 +171,7 @@ impl QueueManager {
     }
 
     pub fn skip(&self) -> Result<(), QueueError> {
+        self.state.lock().unwrap().on_repeat_track = false;
         self.engine.stop();
         self.next()
     }
@@ -172,6 +180,15 @@ impl QueueManager {
         self.engine.stop();
         let mut s = self.state.lock().unwrap();
         s.current = None;
+    }
+
+    pub fn set_on_repeat(&self, enabled: bool) {
+        self.state.lock().unwrap().on_repeat_track = enabled;
+    }
+
+    pub fn toggle_repeat(&self) {
+        let mut s = self.state.lock().unwrap();
+        s.on_repeat_track = !s.on_repeat_track;
     }
 
    /**
