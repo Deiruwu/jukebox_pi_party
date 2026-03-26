@@ -98,7 +98,7 @@ impl QueueManager {
         };
 
         if should_play {
-            self.play_next()?;
+            self.next()?;
         }
 
         Ok(())
@@ -118,11 +118,10 @@ impl QueueManager {
      *  también se encarga de mover la canción que estaba sonando al historial.
      */
 
-    pub fn play_next(&self) -> Result<(), QueueError> {
+    pub fn next(&self) -> Result<(), QueueError> {
         let track = {
             let mut s = self.state.lock().unwrap();
 
-            // Mover current a history antes de avanzar
             if let Some(prev) = s.current.take() {
                 s.history.push(prev);
             }
@@ -166,7 +165,7 @@ impl QueueManager {
 
     pub fn skip(&self) -> Result<(), QueueError> {
         self.engine.stop();
-        self.play_next()
+        self.next()
     }
 
     pub fn stop(&self) {

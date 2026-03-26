@@ -99,7 +99,7 @@ fn handle_enqueue(track: crate::model::Track, ctx: &mut PlayerContext) {
 fn handle_play_at(index: usize, ctx: &mut PlayerContext) {
     if ctx.queue.move_track(index, 0).is_err() { return; }
     ctx.queue.stop();
-    if ctx.queue.play_next().is_ok() {
+    if ctx.queue.next().is_ok() {
         ctx.is_playing = true;
         ctx.push_state(None);
     }
@@ -107,7 +107,7 @@ fn handle_play_at(index: usize, ctx: &mut PlayerContext) {
 
 fn handle_play_next(ctx: &mut PlayerContext) {
     if !ctx.queue.is_finished() || ctx.queue.current().is_none() { return; }
-    match ctx.queue.play_next() {
+    match ctx.queue.next() {
         Ok(_)  => { ctx.is_playing = true;  ctx.push_state(None); }
         Err(_) => { ctx.is_playing = false; ctx.push_state(None); }
     }
