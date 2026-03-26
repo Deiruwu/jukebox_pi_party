@@ -124,8 +124,11 @@ impl QueueManager {
         let repeat = self.state.lock().unwrap().on_repeat_track;
 
         if repeat {
-            return self.engine.seek(Duration::ZERO)
-                .map_err(|e| QueueError::EngineError(e.to_string()));
+            let track = self.state.lock().unwrap()
+                .current
+                .clone()
+                .ok_or(QueueError::EmptyQueue)?;
+            return self.play_track(track);
         }
 
         let track = {
@@ -138,7 +141,6 @@ impl QueueManager {
 
         self.play_track(track)
     }
-
     /**
      *  Función para reencolar la última canción añadida en el historial.
      */
@@ -180,6 +182,10 @@ impl QueueManager {
         self.engine.stop();
         let mut s = self.state.lock().unwrap();
         s.current = None;
+    }
+
+    pub fn get_repeat(&self) -> bool {
+        self.state.lock().unwrap().on_repeat_track
     }
 
     pub fn set_on_repeat(&self, enabled: bool) {

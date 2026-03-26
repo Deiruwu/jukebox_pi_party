@@ -10,6 +10,9 @@
 // POST /api/play_at         { "index": n }
 // POST /api/remove          { "index": n }
 // POST /api/move            { "from": n, "to": n }
+// POST /api/seek            { "secs": n }
+// POST /api/volume          { "level": f32 }
+// POST /api/repeat/toggle
 // GET  /ws                  WebSocket push — recibe PlayerState JSON en cada cambio
 
 use std::sync::Arc;
@@ -45,6 +48,8 @@ pub struct AppState {
 #[derive(Deserialize)] pub struct ResultQuery { pub query: String }
 #[derive(Deserialize)] pub struct IndexBody   { pub index: usize }
 #[derive(Deserialize)] pub struct MoveBody    { pub from: usize, pub to: usize }
+#[derive(Deserialize)] pub struct SeekBody    { pub secs: u64 }
+#[derive(Deserialize)] pub struct VolumeBody  { pub level: f32 }
 #[derive(Serialize)]   pub struct OkResponse  { pub ok: bool }
 
 #[derive(Serialize)]
@@ -62,6 +67,8 @@ pub struct CurrentResponse {
     pub elapsed_secs:  u64,
     pub duration_secs: u64,
     pub progress:      f64,
+    pub on_repeat:     bool,
+    pub volume:        f32,
 }
 
 fn ok() -> Json<OkResponse> { Json(OkResponse { ok: true }) }
@@ -70,19 +77,25 @@ fn ok() -> Json<OkResponse> { Json(OkResponse { ok: true }) }
 
 pub fn build_router(state: AppState) -> Router {
     Router::new()
-        .route("/api/search",  post(search_handler))
-        .route("/api/results", get(results_handler))
-        .route("/api/current", get(current_handler))
-        .route("/api/queue",   get(queue_handler))
-        .route("/api/pause",   post(|s: State<AppState>| text_cmd(s, "pause")))
-        .route("/api/resume",  post(|s: State<AppState>| text_cmd(s, "resume")))
-        .route("/api/stop",    post(|s: State<AppState>| text_cmd(s, "stop")))
-        .route("/api/skip",    post(|s: State<AppState>| text_cmd(s, "skip")))
-        .route("/api/prev",    post(|s: State<AppState>| text_cmd(s, "prev")))
-        .route("/api/play_at", post(play_at_handler))
-        .route("/api/remove",  post(remove_handler))
-        .route("/api/move",    post(move_handler))
-        .route("/ws",          get(ws_handler))
+        .route("/api/search",        post(search_handler))
+        .route("/api/results",       get(results_handler))
+        .route("/api/current",       get(current_handler))
+        .route("/api/queue",         get(queue_handler))
+        .route("/api/pause",         post(|s: State<AppState>| text_cmd(s, "pause")))
+        .route("/api/resume",        post(|s: State<AppState>| text_cmd(s, "resume")))
+        .route("/api/stop",          post(|s: State<AppState>| text_cmd(s, "stop")))
+        .route("/api/skip",          post(|s: State<AppState>| text_cmd(s, "skip")))
+        .route("/api/prev",          post(|s: State<AppState>| text_cmd(s, "prev")))
+        .route("/api/play_at",       post(play_at_handler))
+        .route("/api/remove",        post(remove_handler))
+        .route("/api/move",          post(move_handler))
+        .route("/api/seek",          post(seek_handler))
+        .route("/api/volume",        post(volume_handler))
+        .route("/api/repeat/toggle", post(|s: State<AppState>| async move {
+            let _ = s.cmd_tx.send(PlayerCmd::ToggleRepeat);
+            ok()
+        }))
+        .route("/ws",                get(ws_handler))
         .with_state(state)
 }
 
@@ -120,6 +133,8 @@ async fn current_handler(State(s): State<AppState>) -> impl IntoResponse {
         elapsed_secs:  state.elapsed_secs,
         duration_secs: state.duration_secs,
         progress:      state.progress,
+        on_repeat:     state.on_repeat,
+        volume:        state.volume,
     }).into_response()
 }
 
@@ -154,6 +169,22 @@ async fn move_handler(
     Json(b): Json<MoveBody>,
 ) -> impl IntoResponse {
     let _ = s.cmd_tx.send(PlayerCmd::MoveTrack { from: b.from, to: b.to });
+    ok()
+}
+
+async fn seek_handler(
+    State(s): State<AppState>,
+    Json(b): Json<SeekBody>,
+) -> impl IntoResponse {
+    let _ = s.cmd_tx.send(PlayerCmd::Seek(b.secs));
+    ok()
+}
+
+async fn volume_handler(
+    State(s): State<AppState>,
+    Json(b): Json<VolumeBody>,
+) -> impl IntoResponse {
+    let _ = s.cmd_tx.send(PlayerCmd::SetVolume(b.level));
     ok()
 }
 

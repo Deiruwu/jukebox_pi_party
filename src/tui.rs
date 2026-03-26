@@ -63,6 +63,8 @@ pub struct PlayerState {
     pub progress:      f64,
     pub elapsed_secs:  u64,
     pub duration_secs: u64,
+    pub on_repeat:    bool,
+    pub volume: f32,
     pub status_msg:    Option<String>,
 }
 
@@ -75,6 +77,8 @@ impl Default for PlayerState {
             progress:      0.0,
             elapsed_secs:  0,
             duration_secs: 0,
+            on_repeat: false,
+            volume:     1.0,
             status_msg:    None,
         }
     }

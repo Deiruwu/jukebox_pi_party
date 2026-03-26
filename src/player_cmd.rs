@@ -1,4 +1,5 @@
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{broadcast, mpsc};
 
 use crate::managers::{QueueManager, TrackManager};
@@ -15,6 +16,9 @@ pub enum PlayerCmd {
     StatusMsg(String),
     RemoveAt(usize),
     MoveTrack { from: usize, to: usize },
+    Seek(u64),
+    SetVolume(f32),
+    ToggleRepeat,
     Tick,
 }
 
@@ -47,6 +51,8 @@ impl PlayerContext {
             progress,
             elapsed_secs:  elapsed,
             duration_secs: duration,
+            on_repeat:     self.queue.get_repeat(),
+            volume:        self.queue.get_volume(),
             status_msg:    msg,
         };
         let _ = self.tui_tx.send(state.clone());
@@ -66,6 +72,9 @@ pub async fn handle(cmd: PlayerCmd, ctx: &mut PlayerContext) {
         PlayerCmd::MoveTrack { from, to } => handle_move(from, to, ctx),
         PlayerCmd::StatusMsg(msg)         => ctx.push_state(Some(msg)),
         PlayerCmd::TextCmd(cmd)           => handle_text_cmd(&cmd, ctx),
+        PlayerCmd::Seek(secs)             => handle_seek(secs, ctx),
+        PlayerCmd::SetVolume(level)       => handle_set_volume(level, ctx),
+        PlayerCmd::ToggleRepeat           => handle_toggle_repeat(ctx),
         PlayerCmd::Tick                   => { if ctx.is_playing { ctx.push_state(None); } }
     }
 }
@@ -120,6 +129,21 @@ fn handle_remove(index: usize, ctx: &mut PlayerContext) {
 
 fn handle_move(from: usize, to: usize, ctx: &mut PlayerContext) {
     let _ = ctx.queue.move_track(from, to);
+    ctx.push_state(None);
+}
+
+fn handle_seek(secs: u64, ctx: &mut PlayerContext) {
+    let _ = ctx.queue.seek(Duration::from_secs(secs));
+    ctx.push_state(None);
+}
+
+fn handle_set_volume(level: f32, ctx: &mut PlayerContext) {
+    ctx.queue.set_volume(level);
+    ctx.push_state(None);
+}
+
+fn handle_toggle_repeat(ctx: &mut PlayerContext) {
+    ctx.queue.toggle_repeat();
     ctx.push_state(None);
 }
 
