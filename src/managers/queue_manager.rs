@@ -94,7 +94,7 @@ impl QueueManager {
         let should_play = {
             let mut s = self.state.lock().unwrap();
             s.queue.push_back(track);
-            s.current.is_none() && !self.engine.is_finished() == false
+            s.current.is_none() && self.engine.is_finished() == true
         };
 
         if should_play {
