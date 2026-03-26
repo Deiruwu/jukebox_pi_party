@@ -239,8 +239,21 @@ impl QueueManager {
         self.engine.position()
     }
 
-    pub fn duration(&self) -> Option<std::time::Duration> {
+    pub fn duration(&self) -> Option<Duration> {
         self.engine.duration()
+    }
+
+    pub fn set_volume(&self, level: f32) {
+        self.engine.set_volume(level);
+    }
+
+    pub fn get_volume(&self) -> f32 {
+        self.engine.get_volume()
+    }
+
+    pub fn seek(&self, position: Duration) -> Result<(), QueueError> {
+        self.engine.seek(position)
+            .map_err(|e| QueueError::EngineError(e.to_string()))
     }
 
     /**
