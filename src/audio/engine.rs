@@ -7,7 +7,6 @@ use rodio::Source;
 use crate::model::PlayableTrack;
 use rodio::cpal::traits::{DeviceTrait, HostTrait};
 use serde::{Serialize, Deserialize};
-
 // --- ERROR -------------------------------------------------------------------
 
 #[derive(Debug)]
@@ -110,46 +109,17 @@ impl AudioEngine {
 
         let pos_shared = Arc::clone(&self.current_pos);
 
-        let extension = std::path::Path::new(&playable.path)
-            .extension()
-            .and_then(|e| e.to_str())
-            .unwrap_or("");
+        let file = File::open(&playable.path)
+            .map_err(|_| EngineError::FileNotFound(playable.path.clone()))?;
 
-        // track_position requiere Sized, se aplica antes de cualquier borrado de tipo
-        match extension {
-            "m4a" => {
-                let output = std::process::Command::new("ffmpeg")
-                    .args([
-                        "-i", &playable.path,
-                        "-f", "wav",
-                        "-ar", "48000",
-                        "-ac", "2",
-                        "pipe:1",
-                    ])
-                    .output()
-                    .map_err(|e| EngineError::DecodeFailed(e.to_string()))?;
+        let source = Decoder::try_from(file)
+            .map_err(|e| EngineError::DecodeFailed(e.to_string()))?
+            .track_position()
+            .periodic_access(Duration::from_millis(200), move |s| {
+                *pos_shared.lock().unwrap() = s.get_pos();
+            });
 
-                let cursor = std::io::Cursor::new(output.stdout);
-                let source = Decoder::try_from(cursor)
-                    .map_err(|e| EngineError::DecodeFailed(e.to_string()))?
-                    .track_position()
-                    .periodic_access(Duration::from_millis(200), move |s| {
-                        *pos_shared.lock().unwrap() = s.get_pos();
-                    });
-                player.append(source);
-            }
-            _ => {
-                let file = File::open(&playable.path)
-                    .map_err(|_| EngineError::FileNotFound(playable.path.clone()))?;
-                let source = Decoder::try_from(file)
-                    .map_err(|e| EngineError::DecodeFailed(e.to_string()))?
-                    .track_position()
-                    .periodic_access(Duration::from_millis(200), move |s| {
-                        *pos_shared.lock().unwrap() = s.get_pos();
-                    });
-                player.append(source);
-            }
-        }
+        player.append(source);
 
         *self.player.lock().unwrap()   = Some(player);
         *self.state.lock().unwrap()    = PlaybackState::Playing;
@@ -158,7 +128,6 @@ impl AudioEngine {
 
         Ok(())
     }
-
     pub fn pause(&self) -> Result<(), EngineError> {
         let player = self.player.lock().unwrap();
         match player.as_ref() {
@@ -220,9 +189,22 @@ impl AudioEngine {
             .unwrap_or(true)
     }
 
-    /// Posicion actual dentro del track, reportada por el decoder.
+    /// Posición actual dentro del track, reportada por el decoder.
     pub fn position(&self) -> Duration {
         *self.current_pos.lock().unwrap()
+    }
+
+    /// Metodo para cambiar la posición de la canción
+    pub fn seek(&self, position: Duration) -> Result<(), EngineError> {
+        let player_guard = self.player.lock().unwrap();
+        let player = player_guard.as_ref().ok_or(EngineError::NoTrackLoaded)?;
+
+        player.try_seek(position)
+            .map_err(|e| {EngineError::DecodeFailed(format!("Fallo al hacer seek: {}", e))})?;
+
+        *self.current_pos.lock().unwrap() = position;
+
+        Ok(())
     }
 
     /// Duracion total del track actual, extraida por symphonia al momento de encolar.
