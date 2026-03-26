@@ -55,16 +55,27 @@ impl PythonMicroservice {
 
         let python_exe = self.venv_path
             .join("bin")
-            .join("python3.13");
+            .join("python");
 
         println!("Ejecutándose desde: {:#?}", self);
 
-        let mut child = Command::new(&python_exe)
-            .arg(&self.script_path)
+        let mut std_cmd = Command::new(&python_exe);
+
+        std_cmd.arg(&self.script_path)
             .env("VIRTUAL_ENV", &self.venv_path)
             .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()?;
+            .stderr(Stdio::inherit());
+        unsafe {
+            std_cmd.pre_exec(|| {
+                let result = libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM);
+                if result != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                Ok(())
+            });
+        }
+
+        let mut child = Command::from(std_cmd).spawn()?;
 
         let stdout = child.stdout.take()
             .ok_or("No se pudo capturar stdout")?;

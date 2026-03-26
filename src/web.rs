@@ -1,6 +1,6 @@
 // POST /api/search          { "query": "..." }  → encola directo
 // GET  /api/results?query=  → devuelve Vec<TrackDto> sin encolar
-// GET  /api/current         → track actual + posicion + estado
+// GET  /api/current         → track actual + posición + estado
 // GET  /api/queue           → cola pendiente
 // POST /api/pause
 // POST /api/resume

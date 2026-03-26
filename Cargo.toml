@@ -25,4 +25,5 @@ ratatui = "0.28"
 crossterm = { version = "0.28", features = ["event-stream"] }
 
 axum = { version = "0.7", features = ["ws"] }
-tower-http = "0.5"
+
+libc = { version = "0.2.183" }

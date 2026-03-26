@@ -2,7 +2,7 @@ pub mod metadata_response;
 pub mod request;
 pub mod track;
 mod playable_track;
-mod SearchResponse;
+mod search_response;
 
 pub use track::Track;
 pub use request::Request;

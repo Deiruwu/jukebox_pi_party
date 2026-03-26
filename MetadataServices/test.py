@@ -18,7 +18,7 @@ def interactive_test():
                 client.settimeout(10.0)
                 client.connect((host, port))
 
-                payload = {"action": "video", "query": query}
+                payload = {"action": "search", "query": query}
                 client.sendall((json.dumps(payload) + "\n").encode('utf-8'))
 
                 # Leer respuesta completa (NDJSON)
