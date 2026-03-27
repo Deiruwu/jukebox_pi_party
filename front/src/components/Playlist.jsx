@@ -1,4 +1,5 @@
 import { Music, GripVertical, Play, X } from 'lucide-react';
+import { formatDuration } from '../utils/formatters.js';
 
 const PlaylistPanel = ({ queue, current, cmd, dragging, dragOver, onDragStart, onDragEnter, onDragOver, onDragEnd, onDrop }) => (
   <div className="max-w-2xl mx-auto px-6 pt-6">
@@ -61,7 +62,7 @@ const PlaylistPanel = ({ queue, current, cmd, dragging, dragOver, onDragStart, o
               <p className="text-[#DCDCEB] text-sm truncate leading-tight">{track.title}</p>
               <p className="text-[#646482] text-xs truncate">{track.artist}</p>
             </div>
-            <span className="text-[#646482] text-xs tabular-nums shrink-0">{track.duration}</span>
+            <span className="text-[#646482] text-xs tabular-nums shrink-0">{formatDuration(track.duration)}</span>
             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition shrink-0">
               <button onClick={() => cmd('play_at', { index: i })}
                 className="p-1.5 rounded-lg text-[#646482] hover:text-[#8B5CF6] hover:bg-[#8B5CF6]/10 transition">
