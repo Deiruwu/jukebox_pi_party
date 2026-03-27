@@ -3,6 +3,7 @@ use std::time::Duration;
 use tokio::sync::{broadcast, mpsc};
 
 use crate::managers::{QueueManager, TrackManager};
+use crate::model::DownloadProgress;
 use crate::tui::PlayerState;
 
 // --- Enum --------------------------------------------------------------------
@@ -20,6 +21,7 @@ pub enum PlayerCmd {
     SetVolume(f32),
     ToggleRepeat,
     Tick,
+    DownloadProgress(DownloadProgress),
 }
 
 // --- Contexto que necesitan los handlers -------------------------------------
@@ -31,6 +33,8 @@ pub struct PlayerContext {
     pub tui_tx:        std::sync::mpsc::Sender<PlayerState>,
     pub ws_tx:         broadcast::Sender<PlayerState>,
     pub is_playing:    bool,
+    pub downloads:     Vec<DownloadProgress>,
+    pub dl_tx:         mpsc::Sender<DownloadProgress>,
 }
 
 impl PlayerContext {
@@ -53,6 +57,7 @@ impl PlayerContext {
             duration_secs: duration,
             on_repeat:     self.queue.get_repeat(),
             volume:        self.queue.get_volume(),
+            downloads: self.downloads.clone(),
             status_msg:    msg,
         };
         let _ = self.tui_tx.send(state.clone());
@@ -75,7 +80,23 @@ pub async fn handle(cmd: PlayerCmd, ctx: &mut PlayerContext) {
         PlayerCmd::Seek(secs)             => handle_seek(secs, ctx),
         PlayerCmd::SetVolume(level)       => handle_set_volume(level, ctx),
         PlayerCmd::ToggleRepeat           => handle_toggle_repeat(ctx),
-        PlayerCmd::Tick                   => { if ctx.is_playing { ctx.push_state(None); } }
+        PlayerCmd::Tick                   => { if ctx.is_playing { ctx.push_state(None); } },
+        PlayerCmd::DownloadProgress(dp) => {
+            if dp.percent >= 100.0 {
+                // Remover del vec cuando termina
+                ctx.downloads.retain(|d| d.track.id != dp.track.id);
+            } else {
+                // Upsert: actualizar si ya existe, insertar si no
+                if let Some(existing) = ctx.downloads.iter_mut()
+                    .find(|d| d.track.id == dp.track.id)
+                {
+                    *existing = dp;
+                } else {
+                    ctx.downloads.push(dp);
+                }
+            }
+            ctx.push_state(None);
+        }
     }
 }
 
@@ -84,12 +105,10 @@ pub async fn handle(cmd: PlayerCmd, ctx: &mut PlayerContext) {
 fn handle_search(query: String, ctx: &PlayerContext) {
     let tm  = Arc::clone(&ctx.track_manager);
     let tx  = ctx.cmd_tx.clone();
+    let dl_tx = ctx.dl_tx.clone();
     tokio::spawn(async move {
         let _ = tx.send(PlayerCmd::StatusMsg(format!("Buscando: {}", query)));
-        let tx2 = tx.clone();
-        match tm.resolve_with_status(&query, move |msg| {
-            let _ = tx2.send(PlayerCmd::StatusMsg(msg));
-        }).await {
+        match tm.resolve_with_status(&query, dl_tx).await {
             Ok(track) => { let _ = tx.send(PlayerCmd::Enqueue(track)); }
             Err(e)    => { let _ = tx.send(PlayerCmd::StatusMsg(format!("Error: {}", e))); }
         }

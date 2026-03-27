@@ -2,8 +2,10 @@
 
 use std::path::PathBuf;
 use std::process::Stdio;
+use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
-use crate::model::Track;
+use tokio::sync::mpsc;
+use crate::model::{DownloadProgress, Track};
 
 #[derive(Debug)]
 pub enum DownloadError {
@@ -41,7 +43,7 @@ impl DownloadService {
     pub async fn download(
         &self,
         track: &Track,
-        on_status: impl Fn(String) + Send + 'static,
+        progress_tx: mpsc::Sender<DownloadProgress>,
     ) -> Result<String, DownloadError> {
         tokio::fs::create_dir_all(&self.cache_dir).await?;
 
@@ -50,41 +52,43 @@ impl DownloadService {
             .to_string_lossy()
             .to_string();
 
-        let track_id = &track.id;
+        let url = format!("https://www.youtube.com/watch?v={}", track.id);
 
-        let url = format!("https://www.youtube.com/watch?v={}", track_id);
-
-        on_status(format!("Descargando: {} - {}", track.title, track.artist));
-
-        let status = Command::new("yt-dlp")
+        let mut child = Command::new("yt-dlp")
             .args([
                 "-x",
                 "--audio-quality", "0",
                 "--extractor-args", "youtube:player_client=android",
                 "-r", "2M",
+                "--newline",
+                "--progress",
                 "-o", &output_template,
-                "--quiet",
-                "--no-warnings",
                 &url,
             ])
-            .stdout(Stdio::null())
+            .stdout(Stdio::piped())
             .stderr(Stdio::null())
-            .status()
-            .await?;
+            .spawn()?;
 
-        if !status.success() {
-            return Err(DownloadError::YtDlpFailed(
-                format!("exit status: {}", status)
-            ));
+        // Leer stdout línea a línea y parsear "[download]  42.3% of ... at 1.2MiB/s"
+        if let Some(stdout) = child.stdout.take() {
+            let track_clone = track.clone();
+            let tx = progress_tx.clone();
+            tokio::spawn(async move {
+                let mut lines = BufReader::new(stdout).lines();
+                while let Ok(Some(line)) = lines.next_line().await {
+                    if let Some(progress) = parse_progress_line(&line, &track_clone) {
+                        let _ = tx.send(progress).await;
+                    }
+                }
+            });
         }
 
-        on_status("Extrayendo audio...".into());
+        let status = child.wait().await?;
+        if !status.success() {
+            return Err(DownloadError::YtDlpFailed(format!("exit status: {}", status)));
+        }
 
-        let path = self.find_file(track_id).await?;
-
-        on_status("Listo.".into());
-
-        Ok(path)
+        self.find_file(&track.id).await
     }
 
     async fn find_file(&self, video_id: &str) -> Result<String, DownloadError> {
@@ -96,4 +100,18 @@ impl DownloadService {
         }
         Err(DownloadError::FileNotFound(video_id.to_string()))
     }
+}
+fn parse_progress_line(line: &str, track: &Track) -> Option<DownloadProgress> {
+    if !line.trim_start().starts_with("[download]") { return None; }
+
+    let percent_str = line.split_whitespace()
+        .find(|s| s.ends_with('%'))?;
+    let percent: f32 = percent_str.trim_end_matches('%').parse().ok()?;
+
+    let speed = line.split_whitespace()
+        .find(|s| s.contains("iB/s"))
+        .unwrap_or("--")
+        .to_string();
+
+    Some(DownloadProgress { track: track.clone(), percent, speed })
 }

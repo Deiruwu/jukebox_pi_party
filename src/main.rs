@@ -13,6 +13,7 @@ use tokio::sync::{broadcast, mpsc, RwLock};
 
 use crate::audio::AudioEngine;
 use crate::managers::{QueueManager, TrackManager};
+use crate::model::DownloadProgress;
 use crate::player_cmd::{PlayerContext, PlayerCmd, handle};
 use crate::repository::{Database, TrackRepository};
 use crate::services::{DownloadService, MetadataClient, PythonMicroservice};
@@ -40,11 +41,20 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let (cmd_tx, mut cmd_rx) = mpsc::unbounded_channel::<PlayerCmd>();
     let (tui_tx, tui_rx)     = std::sync::mpsc::channel::<PlayerState>();
     let (ws_tx, _)           = broadcast::channel::<PlayerState>(32);
+    let (dl_tx, mut dl_rx)   = mpsc::channel::<DownloadProgress>(32);
+
+    // -- Puente descargas → cmd loop ------------------------------------------
+    let cmd_tx_dl = cmd_tx.clone();
+    tokio::spawn(async move {
+        while let Some(dp) = dl_rx.recv().await {
+            let _ = cmd_tx_dl.send(PlayerCmd::DownloadProgress(dp));
+        }
+    });
 
     // -- last_state: cache del ultimo PlayerState para los endpoints REST -----
-    let last_state = Arc::new(RwLock::new(PlayerState::default()));
+    let last_state        = Arc::new(RwLock::new(PlayerState::default()));
     let last_state_writer = Arc::clone(&last_state);
-    let mut state_rx = ws_tx.subscribe();
+    let mut state_rx      = ws_tx.subscribe();
     tokio::spawn(async move {
         while let Ok(state) = state_rx.recv().await {
             *last_state_writer.write().await = state;
@@ -76,6 +86,8 @@ async fn main() -> Result<(), Box<dyn Error>> {
         tui_tx,
         ws_tx,
         is_playing: false,
+        downloads:  Vec::new(),
+        dl_tx,
     };
 
     while let Some(cmd) = cmd_rx.recv().await {

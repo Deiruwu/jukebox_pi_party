@@ -39,7 +39,7 @@ use crossterm::{
 use serde::{Deserialize, Serialize};
 use tokio::sync::mpsc::UnboundedSender;
 
-use crate::model::Track;
+use crate::model::{DownloadProgress, Track};
 
 // ─── PALETA ──────────────────────────────────────────────────────────────────
 
@@ -66,6 +66,7 @@ pub struct PlayerState {
     pub on_repeat:    bool,
     pub volume: f32,
     pub status_msg:    Option<String>,
+    pub downloads: Vec<DownloadProgress>,
 }
 
 impl Default for PlayerState {
@@ -80,6 +81,7 @@ impl Default for PlayerState {
             on_repeat: false,
             volume:     1.0,
             status_msg:    None,
+            downloads:     Vec::new(),
         }
     }
 }

@@ -1,4 +1,5 @@
-use crate::model::Track;
+use tokio::sync::mpsc;
+use crate::model::{DownloadProgress, Track};
 use crate::repository::TrackRepository;
 use crate::services::MetadataClient;
 use crate::services::{DownloadService, DownloadError};
@@ -44,14 +45,16 @@ impl TrackManager {
         Self { metadata, repo, downloader }
     }
 
+    /// Resuelve sin reportar progreso (cache hits no necesitan canal).
     pub async fn resolve(&self, query: &str) -> Result<Track, TrackManagerError> {
-        self.resolve_with_status(query, |_| {}).await
+        let (tx, _rx) = mpsc::channel(1);
+        self.resolve_with_status(query, tx).await
     }
 
     pub async fn resolve_with_status(
         &self,
         query: &str,
-        on_status: impl Fn(String) + Send + 'static + Clone,
+        progress_tx: mpsc::Sender<DownloadProgress>,
     ) -> Result<Track, TrackManagerError> {
         let query = query.trim();
 
@@ -65,10 +68,10 @@ impl TrackManager {
             }
             // ── 3. No está en DB → buscar metadata por ID y descargar ────────
             let track = self.fetch_by_id(&id).await?;
-            return self.download_and_save(track, on_status).await;
+            return self.download_and_save(track, progress_tx).await;
         }
 
-        // ── 4. Búsqueda por texto → metadata primero ──────────────────────────
+        // ── 4. Búsqueda por texto → metadata primero ─────────────────────────
         let track = self.fetch_first_result(query).await?;
 
         // ── 5. Cache hit tras resolver el ID real ─────────────────────────────
@@ -79,7 +82,7 @@ impl TrackManager {
         }
 
         // ── 6. No existe → descargar ──────────────────────────────────────────
-        self.download_and_save(track, on_status).await
+        self.download_and_save(track, progress_tx).await
     }
 
     // ─── Públicos ─────────────────────────────────────────────────────────────
@@ -110,13 +113,14 @@ impl TrackManager {
 
         results.drain(..).next().ok_or(TrackManagerError::NoResults)
     }
+
     /// Descarga un track y lo persiste en la base de datos.
     async fn download_and_save(
         &self,
         track: Track,
-        on_status: impl Fn(String) + Send + 'static,
+        progress_tx: mpsc::Sender<DownloadProgress>,
     ) -> Result<Track, TrackManagerError> {
-        let path  = self.downloader.download(&track, on_status).await?;
+        let path  = self.downloader.download(&track, progress_tx).await?;
         let track = Track { path: Some(path), ..track };
         self.repo.insert(&track).await?;
         Ok(track)
