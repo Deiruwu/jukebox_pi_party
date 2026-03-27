@@ -181,6 +181,8 @@ impl QueueManager {
     pub fn stop(&self) {
         self.engine.stop();
         let mut s = self.state.lock().unwrap();
+        s.queue.clear();
+        s.history.clear();
         s.current = None;
     }
 
