@@ -1,12 +1,14 @@
 use rodio::{Decoder, Player};
 use rodio::stream::{DeviceSinkBuilder, MixerDeviceSink};
 use std::fs::File;
+use std::io::BufReader;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 use rodio::Source;
 use crate::model::PlayableTrack;
 use rodio::cpal::traits::{DeviceTrait, HostTrait};
 use serde::{Serialize, Deserialize};
+
 // --- ERROR -------------------------------------------------------------------
 
 #[derive(Debug)]
@@ -112,11 +114,15 @@ impl AudioEngine {
         let file = File::open(&playable.path)
             .map_err(|_| EngineError::FileNotFound(playable.path.clone()))?;
 
-        let source = Decoder::try_from(file)
+        let reader = BufReader::with_capacity(256 * 1024, file);
+
+        let source = Decoder::try_from(reader)
             .map_err(|e| EngineError::DecodeFailed(e.to_string()))?
             .track_position()
             .periodic_access(Duration::from_millis(200), move |s| {
-                *pos_shared.lock().unwrap() = s.get_pos();
+                if let Ok(mut pos) = pos_shared.try_lock() {
+                    *pos = s.get_pos();
+                }
             });
 
         player.append(source);
